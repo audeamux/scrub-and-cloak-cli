@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
 
 #---------------- Helpers
@@ -116,7 +117,7 @@ while true; do
 
   case "$ans" in
     1)
-      print_color yellow "Re-scaning..."
+      print_color yellow "Re-scanning..."
       ;;
     2)
       print_color yellow "Continuing anyway..."
@@ -189,7 +190,7 @@ sudo docker run --rm -it \
 
 print_color green "Fawkes run completed."
 
-#---------------- Move cloaked outputs (only) to separate folder
+#---------------- Move cloaked images to separate folder
 
 print_color green "Moving cloaked files to $CLOAKED_DIR"
 mkdir -p "$CLOAKED_DIR"
@@ -197,7 +198,7 @@ mkdir -p "$CLOAKED_DIR"
 moved=0
 while IFS= read -r -d '' f; do
   mv -f "$f" "$CLOAKED_DIR/"
-  ((moved+=1))    # <-- FIXED (was moved++)
+  ((moved+=1))
 done < <(find "$IMG_DIR" -maxdepth 1 -type f -name "*_${MODE}_cloaked.*" -print0)
 
 if [[ "$moved" -eq 0 ]]; then
@@ -208,14 +209,14 @@ fi
 
 print_color green "Moved $moved cloaked file(s)."
 
-#---------------- Exif (ONLY on cloaked files)
+#---------------- Exif on cleaked file only
 
 print_color green "Stripping metadata from cloaked files only: $CLOAKED_DIR"
 
 stripped=0
 while IFS= read -r -d '' f; do
   exiftool -overwrite_original -all= "$f" >/dev/null
-  ((stripped+=1))   # <-- FIXED (was stripped++)
+  ((stripped+=1))
 done < <(find "$CLOAKED_DIR" -maxdepth 1 -type f -print0)
 
 print_color green "EXIF stripping complete. Files processed: $stripped"
