@@ -6,7 +6,7 @@ The script is intentionally simple and interactive: you drop images into a folde
 
 ---
 
-## Purpose (what this is for)
+## Purpose
 
 This project helps you create **shareable copies** of photos that:
 
@@ -17,7 +17,7 @@ It keeps the originals intact and only operates on the cloaked copies.
 
 ---
 
-## Credit / attribution
+## Credit
 
 **Fawkes** is developed by researchers at the **University of Chicago**.  
 This repo does **not** reimplement Fawkes. It automates running their published binary and post-processing the outputs.
