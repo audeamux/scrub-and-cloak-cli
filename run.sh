@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
 #---------------- Helpers
@@ -20,20 +19,6 @@ print_color() {
   echo -e "${COLOR}${msg}${NC}"
 }
 
-check_service_status() {
-  local svc="$1"
-  local status
-
-  status="$(systemctl is-active "$svc" 2>/dev/null || true)"
-  if [[ "$status" == "active" ]]; then
-    print_color green "$svc service is active"
-  else
-    print_color red "$svc service is not active (status: $status)"
-    systemctl --no-pager -l status "$svc" || true
-    exit 1
-  fi
-}
-
 #---------------- Vars
 
 FAWKES_DIR="$HOME/fawkes"
@@ -43,11 +28,20 @@ CLOAKED_DIR="$FAWKES_DIR/scroaked"
 ZIP_URL="https://mirror.cs.uchicago.edu/fawkes/files/1.0/fawkes_binary_linux-v1.0.zip"
 ZIP_FILE="$FAWKES_DIR/fawkes_binary_linux-v1.0.zip"
 
+RUNTIME_DIR="$FAWKES_DIR/runtime"
+DOCKERFILE="$RUNTIME_DIR/Dockerfile"
+IMAGE_TAG="fawkes-runtime:22.04"
+
 #---------------- Prereqs
 
 print_color green "Updating DNF and installing prerequisites"
 sudo dnf update -y
-sudo dnf install -y wget curl unzip docker-cli perl-Image-ExifTool file
+sudo dnf install -y wget curl unzip podman perl-Image-ExifTool file
+
+command -v podman >/dev/null 2>&1 || {
+  print_color red "podman is required but not installed. Please check the podman service status"
+  exit 1
+}
 
 # Heads-up: Fawkes binary will likely require AVX
 if ! grep -qm1 -oE 'avx2|avx' /proc/cpuinfo; then
@@ -73,11 +67,37 @@ else
   print_color green "Fawkes binary already present: $FAWKES_DIR/protection"
 fi
 
+#---------------- Create Dockerfile + build runtime image (one-time)
+
+mkdir -p "$RUNTIME_DIR"
+
+if [[ ! -f "$DOCKERFILE" ]]; then
+  print_color green "Creating runtime Dockerfile: $DOCKERFILE"
+  cat > "$DOCKERFILE" <<'EOF'
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libgl1 \
+    libstdc++6 \
+    libgomp1 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/fawkes
+EOF
+fi
+
+if ! podman image exists "$IMAGE_TAG"; then
+  print_color green "Building local runtime image: $IMAGE_TAG"
+  podman build -t "$IMAGE_TAG" -f "$DOCKERFILE" "$RUNTIME_DIR"
+else
+  print_color green "Runtime image already present: $IMAGE_TAG"
+fi
+
 #---------------- Message (interactive: waits for images)
 
 print_color green "Place your pictures into: $IMG_DIR"
-# Quick first scan, so we know if there are any images already
-# Mime inspect file content to determine file type...png, jpg, etc
+# MIME inspects file content to determine file type (png, jpg, etc)
 
 img_count=0
 shopt -s nullglob
@@ -116,20 +136,10 @@ while true; do
   read -r -p "> " ans
 
   case "$ans" in
-    1)
-      print_color yellow "Re-scanning..."
-      ;;
-    2)
-      print_color yellow "Continuing anyway..."
-      break
-      ;;
-    3)
-      print_color yellow "Canceled."
-      exit 0
-      ;;
-    *)
-      print_color red "Invalid option."
-      ;;
+    1) print_color yellow "Re-scanning..." ;;
+    2) print_color yellow "Continuing anyway..."; break ;;
+    3) print_color yellow "Canceled."; exit 0 ;;
+    *) print_color red "Invalid option." ;;
   esac
 done
 
@@ -162,30 +172,17 @@ case "$yn" in
   *) print_color yellow "Canceled."; exit 0 ;;
 esac
 
-#---------------- Docker
+#---------------- Run Fawkes (using prebuilt runtime image)
 
-sudo systemctl start docker || true
-check_service_status docker
-
-sudo docker run --rm -it \
+podman run --rm -it \
   -v "$FAWKES_DIR:/app/fawkes:Z" \
   -w /app/fawkes \
-  ubuntu:22.04 \
+  "$IMAGE_TAG" \
   bash -lc '
     set -e
-    echo "Updating apt..."
-    apt-get update > /dev/null
-    echo "Installing deps..."
-    apt-get install -y --no-install-recommends \
-      libglib2.0-0 \
-      libgl1 \
-      libstdc++6 \
-      libgomp1 \
-    > /dev/null
-
     echo "Running Fawkes..."
     chmod +x ./protection
-    ./protection -d ./imgs --mode '$MODE'
+    ./protection -d ./imgs --mode '"$MODE"'
   '
 
 print_color green "Fawkes run completed."
@@ -209,7 +206,7 @@ fi
 
 print_color green "Moved $moved cloaked file(s)."
 
-#---------------- Exif on cleaked file only
+#---------------- Exif on cloaked files only
 
 print_color green "Stripping metadata from cloaked files only: $CLOAKED_DIR"
 
