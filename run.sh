@@ -44,6 +44,7 @@ command -v podman >/dev/null 2>&1 || {
 }
 
 # Heads-up: Fawkes binary will likely require AVX
+# If running on a virtual machine, set your CPU mode to 'AVX' or 'host'
 if ! grep -qm1 -oE 'avx2|avx' /proc/cpuinfo; then
   print_color yellow "WARNING: No AVX/AVX2 detected in /proc/cpuinfo."
   print_color yellow "Some ML/vision binaries may fail with 'Illegal instruction' in this environment."
@@ -67,7 +68,9 @@ else
   print_color green "Fawkes binary already present: $FAWKES_DIR/protection"
 fi
 
-#---------------- Create Dockerfile + build runtime image (one-time)
+#---------------- Docker file of a one-time container build
+# First run takes a bit longer, as container needs to be built with dependancies installed
+# Subsequent jobs will be significantly faster
 
 mkdir -p "$RUNTIME_DIR"
 
@@ -94,7 +97,7 @@ else
   print_color green "Runtime image already present: $IMAGE_TAG"
 fi
 
-#---------------- Message (interactive: waits for images)
+#----------------- Interactive message
 
 print_color green "Place your pictures into: $IMG_DIR"
 # MIME inspects file content to determine file type (png, jpg, etc)
@@ -172,7 +175,7 @@ case "$yn" in
   *) print_color yellow "Canceled."; exit 0 ;;
 esac
 
-#---------------- Run Fawkes (using prebuilt runtime image)
+#---------------- Run Fawkes using the pre-built image from earlier
 
 podman run --rm -it \
   -v "$FAWKES_DIR:/app/fawkes:Z" \
@@ -200,7 +203,7 @@ done < <(find "$IMG_DIR" -maxdepth 1 -type f -name "*_${MODE}_cloaked.*" -print0
 
 if [[ "$moved" -eq 0 ]]; then
   print_color red "No cloaked files found matching: *_${MODE}_cloaked.*"
-  print_color red "Nothing moved; skipping EXIF stripping."
+  print_color red "Nothing moved...skipping EXIF stripping."
   exit 1
 fi
 
