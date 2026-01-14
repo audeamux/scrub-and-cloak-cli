@@ -100,32 +100,17 @@ fi
 #----------------- Interactive message
 
 print_color green "Place your pictures into: $IMG_DIR"
-# MIME inspects file content to determine file type (png, jpg, etc)
 
-img_count=0
-shopt -s nullglob
-for f in "$IMG_DIR"/*; do
-  [[ -f "$f" ]] || continue
-  mime="$(file -b --mime-type "$f" 2>/dev/null || true)"
-  if [[ "$mime" == image/* ]]; then
-    ((img_count+=1))
-  fi
-done
-shopt -u nullglob
+count_images() {
+  find "$IMG_DIR" -maxdepth 1 -type f \
+    -exec file -b --mime-type -- {} + 2>/dev/null \
+    | grep -c '^image/' || true
+}
 
 while true; do
-  img_count=0
-  shopt -s nullglob
-  for f in "$IMG_DIR"/*; do
-    [[ -f "$f" ]] || continue
-    mime="$(file -b --mime-type "$f" 2>/dev/null || true)"
-    if [[ "$mime" == image/* ]]; then
-      ((img_count+=1))
-    fi
-  done
-  shopt -u nullglob
+  img_count="$(count_images)"
 
-  if [[ "$img_count" -gt 0 ]]; then
+  if (( img_count > 0 )); then
     print_color green "Detected $img_count image file(s) in $IMG_DIR"
     break
   fi
@@ -146,7 +131,7 @@ while true; do
   esac
 done
 
-if [[ "$img_count" -eq 0 ]]; then
+if (( img_count == 0 )); then
   print_color red "No images to process. Exiting."
   exit 1
 fi
@@ -192,22 +177,19 @@ print_color green "Fawkes run completed."
 
 #---------------- Move cloaked images to separate folder
 
-print_color green "Moving cloaked files to $CLOAKED_DIR"
+pattern="*_${MODE}_cloaked.*"
+
+print_color green "Moving cloaked outputs ($pattern) to '$CLOAKED_DIR'..."
 mkdir -p "$CLOAKED_DIR"
 
-moved=0
-while IFS= read -r -d '' f; do
-  mv -f "$f" "$CLOAKED_DIR/"
-  ((moved+=1))
-done < <(find "$IMG_DIR" -maxdepth 1 -type f -name "*_${MODE}_cloaked.*" -print0)
-
-if [[ "$moved" -eq 0 ]]; then
-  print_color red "No cloaked files found matching: *_${MODE}_cloaked.*"
-  print_color red "Nothing moved...skipping EXIF stripping."
-  exit 1
+# If no matches, just move on (no hard fail)
+if ! find "$IMG_DIR" -maxdepth 1 -type f -name "$pattern" -print -quit | grep -q .; then
+  print_color yellow "No cloaked files found ($pattern). Skipping move."
+else
+  find "$IMG_DIR" -maxdepth 1 -type f -name "$pattern" -exec mv -f -t "$CLOAKED_DIR" -- {} +
+  print_color green "Moved cloaked files."
 fi
 
-print_color green "Moved $moved cloaked file(s)."
 
 #---------------- Exif on cloaked files only
 
